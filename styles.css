@@ -510,18 +510,66 @@ textarea:focus-visible,
 .paper.turn-underlay {
   z-index: 1;
   pointer-events: none;
-  opacity: 0.72;
-  transform: translate3d(0,0,-1px) scale(0.988);
-  filter: brightness(0.975);
+  opacity: 0.76;
+  transform: translate3d(0,0,-2px) scale(0.992);
+  filter: brightness(0.965);
   box-shadow: none;
 }
 
-.paper.turn-overlay {
-  z-index: 4;
+.paper.turn-curl-sheet {
+  z-index: 5;
   pointer-events: none;
   opacity: 0;
-  transform-origin: left center;
-  box-shadow: 16px 0 38px rgba(26, 23, 18, 0.18);
+  border-color: transparent;
+  border-radius: inherit;
+  box-shadow: none;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, clip-path, opacity, filter;
+}
+
+.paper.turn-curl-sheet::before {
+  display: none;
+}
+
+.paper.turn-curl-sheet::after {
+  opacity: 1;
+  background:
+    radial-gradient(
+      ellipse at var(--curl-highlight-x, 78%) var(--curl-y, 50%),
+      rgba(255,255,255,0.46) 0%,
+      rgba(255,255,255,0.12) 18%,
+      transparent 38%
+    ),
+    linear-gradient(
+      var(--turn-shadow-direction, 90deg),
+      rgba(18,16,13,0.28) 0%,
+      rgba(18,16,13,0.12) 16%,
+      rgba(255,255,255,0.10) 48%,
+      rgba(255,255,255,0.28) 72%,
+      rgba(18,16,13,0.18) 100%
+    );
+}
+
+.turn-fold-shadow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 4;
+  width: clamp(72px, 10vw, 150px);
+  pointer-events: none;
+  opacity: 0;
+  filter: blur(7px);
+  will-change: left, transform, opacity;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(23,20,16,0.04) 18%,
+    rgba(23,20,16,0.26) 58%,
+    rgba(23,20,16,0.08) 82%,
+    transparent 100%
+  );
 }
 
 .paper::before {
@@ -549,7 +597,7 @@ textarea:focus-visible,
       rgba(30, 27, 22, 0.035) 52%,
       rgba(30, 27, 22, 0.22) 100%
     );
-  transition: opacity 60ms linear;
+  transition: opacity 45ms linear;
 }
 
 .page-corner {
@@ -620,6 +668,20 @@ textarea:focus-visible,
 .page-content p,
 .measure-page p {
   margin: 0 0 0.92em;
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+
+.page-content blockquote,
+.measure-page blockquote,
+.page-content li,
+.measure-page li {
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
 }
 
 .page-content blockquote,
