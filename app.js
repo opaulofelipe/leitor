@@ -838,7 +838,7 @@ async function cancelDraggedTurn(direction) {
   resetPaperVisuals();
 }
 
-async function completeTurn(direction) {
+async function completeTurn(direction, programmatic = false) {
   if (state.turning) return;
 
   const nextIndex = state.pageIndex + direction;
@@ -860,11 +860,15 @@ async function completeTurn(direction) {
   }
 
   const layer = activeTurnLayer || prepareTurn(direction);
+  const turnDuration = programmatic ? 780 : 390;
+  const backDuration = programmatic ? 800 : 400;
+  const fadeDuration = programmatic ? 610 : 300;
+  const settleDelay = (direction > 0 ? turnDuration : backDuration) + 15;
 
   if (direction > 0) {
     if (layer) {
       layer.style.transition =
-        "transform 390ms cubic-bezier(.18,.78,.14,1), opacity 280ms ease, filter 300ms ease";
+        `transform ${turnDuration}ms cubic-bezier(.16,.72,.16,1), opacity ${fadeDuration}ms ease, filter ${fadeDuration}ms ease`;
       layer.style.transform = "translate3d(0,0,-1px) scale(1)";
       layer.style.opacity = "1";
       layer.style.filter = "brightness(1)";
@@ -872,7 +876,7 @@ async function completeTurn(direction) {
 
     els.paper.style.transformOrigin = "left center";
     els.paper.style.transition =
-      "transform 390ms cubic-bezier(.18,.78,.14,1), opacity 300ms ease, filter 280ms ease";
+      `transform ${turnDuration}ms cubic-bezier(.16,.72,.16,1), opacity ${fadeDuration}ms ease, filter ${fadeDuration}ms ease`;
     els.paper.style.transform = "translate3d(-3.5%,0,34px) rotateY(-89.4deg)";
     els.paper.style.opacity = "0.08";
     els.paper.style.filter = "brightness(.95)";
@@ -880,19 +884,19 @@ async function completeTurn(direction) {
   } else if (layer) {
     layer.style.transformOrigin = "left center";
     layer.style.transition =
-      "transform 400ms cubic-bezier(.18,.80,.12,1), opacity 285ms ease, filter 285ms ease";
+      `transform ${backDuration}ms cubic-bezier(.16,.74,.14,1), opacity ${fadeDuration}ms ease, filter ${fadeDuration}ms ease`;
     layer.style.transform = "translate3d(0,0,32px) rotateY(0deg)";
     layer.style.opacity = "1";
     layer.style.filter = "brightness(1)";
     layer.style.setProperty("--turn-shadow-opacity", "0.12");
 
     els.paper.style.transition =
-      "transform 400ms cubic-bezier(.18,.80,.12,1), filter 285ms ease";
+      `transform ${backDuration}ms cubic-bezier(.16,.74,.14,1), filter ${fadeDuration}ms ease`;
     els.paper.style.transform = "translate3d(3px,0,0) scale(.996)";
     els.paper.style.filter = "brightness(.955)";
   }
 
-  await sleep(405);
+  await sleep(settleDelay);
 
   state.pageIndex = nextIndex;
   cleanupTurnLayer();
@@ -908,7 +912,7 @@ async function turnPage(direction) {
 
   prepareTurn(direction);
   await nextFrame();
-  await completeTurn(direction);
+  await completeTurn(direction, true);
 }
 
 function updateFont(delta) {
