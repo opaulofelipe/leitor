@@ -571,8 +571,7 @@ function normalizeTag(tag) {
   return allowed.has(String(tag).toLowerCase()) ? String(tag).toLowerCase() : "p";
 }
 
-let activeTurnLayer = null;
-let activeTurnDirection = 0;
+let turnScene = null;
 
 function renderBlocksInto(container, pageIndex) {
   container.replaceChildren();
@@ -580,11 +579,9 @@ function renderBlocksInto(container, pageIndex) {
   page.forEach((block) => container.append(createBlockElement(block)));
 }
 
-function createTurnLayer(pageIndex, kind) {
-  cleanupTurnLayer();
-
+function createTurnPage(pageIndex, className) {
   const article = document.createElement("article");
-  article.className = `paper ${kind}`;
+  article.className = `paper ${className}`;
   article.setAttribute("aria-hidden", "true");
 
   const content = document.createElement("div");
@@ -596,56 +593,175 @@ function createTurnLayer(pageIndex, kind) {
   corner.setAttribute("aria-hidden", "true");
 
   article.append(content, corner);
-
-  if (kind === "turn-underlay") {
-    els.bookViewport.insertBefore(article, els.paper);
-  } else {
-    els.bookViewport.append(article);
-  }
-
-  activeTurnLayer = article;
   return article;
 }
 
 function cleanupTurnLayer() {
-  if (activeTurnLayer?.isConnected) activeTurnLayer.remove();
-  activeTurnLayer = null;
-  activeTurnDirection = 0;
-}
-
-function prepareTurn(direction) {
-  if (activeTurnLayer && activeTurnDirection === direction) return activeTurnLayer;
-
-  cleanupTurnLayer();
-  activeTurnDirection = direction;
-
-  const targetIndex = state.pageIndex + direction;
-  if (targetIndex < 0 || targetIndex >= state.pages.length) return null;
-
-  if (direction > 0) {
-    const layer = createTurnLayer(targetIndex, "turn-underlay");
-    activeTurnDirection = direction;
-    return layer;
+  if (turnScene) {
+    turnScene.underlay?.remove();
+    turnScene.curl?.remove();
+    turnScene.shadow?.remove();
   }
 
-  const layer = createTurnLayer(targetIndex, "turn-overlay");
-  activeTurnDirection = direction;
-  layer.style.transform = "translate3d(-1.5%,0,14px) rotateY(-88deg)";
-  layer.style.transformOrigin = "left center";
-  layer.style.setProperty("--turn-shadow-direction", "270deg");
-  layer.style.setProperty("--turn-shadow-opacity", "0.68");
-  return layer;
+  turnScene = null;
+  resetPaperVisuals();
 }
 
 function resetPaperVisuals() {
-  els.paper.style.transition = "";
-  els.paper.style.transform = "translate3d(0,0,0) rotateY(0deg)";
-  els.paper.style.transformOrigin = "left center";
+  els.paper.style.transition = "none";
+  els.paper.style.clipPath = "inset(0 0 0 0)";
+  els.paper.style.transform = "translate3d(0,0,0)";
+  els.paper.style.transformOrigin = "center center";
   els.paper.style.opacity = "1";
   els.paper.style.filter = "";
   els.paper.style.setProperty("--turn-shadow-opacity", "0");
   els.paper.style.setProperty("--curl-x", "92%");
   els.paper.style.setProperty("--curl-y", "50%");
+}
+
+function prepareTurn(direction, touchYPercent = 50) {
+  const targetIndex = state.pageIndex + direction;
+  if (targetIndex < 0 || targetIndex >= state.pages.length) return null;
+
+  if (turnScene?.direction === direction) {
+    turnScene.touchY = touchYPercent;
+    return turnScene;
+  }
+
+  cleanupTurnLayer();
+
+  const underlay = createTurnPage(targetIndex, "turn-underlay");
+  const curl = createTurnPage(state.pageIndex, "turn-curl-sheet");
+  const shadow = document.createElement("div");
+  shadow.className = "turn-fold-shadow";
+  shadow.setAttribute("aria-hidden", "true");
+
+  els.bookViewport.insertBefore(underlay, els.paper);
+  els.bookViewport.append(shadow, curl);
+
+  turnScene = {
+    direction,
+    targetIndex,
+    underlay,
+    curl,
+    shadow,
+    progress: 0,
+    touchY: touchYPercent,
+  };
+
+  applyCurlProgress(turnScene, 0, touchYPercent);
+  return turnScene;
+}
+
+function applyCurlProgress(scene, progress, touchYPercent = scene.touchY) {
+  if (!scene) return;
+
+  const p = clamp(progress, 0, 1);
+  const direction = scene.direction;
+  const width = Math.max(1, els.paper.clientWidth);
+  const foldX = direction > 0 ? width * (1 - p) : width * p;
+  const wave = Math.sin(Math.PI * p);
+  const curlSpan = clamp(width * (0.15 + wave * 0.11), 86, 310);
+  const lift = 8 + wave * 56;
+  const rotation = 7 + Math.pow(p, 0.76) * 120;
+  const verticalBias = clamp((touchYPercent - 50) / 50, -1, 1);
+  const tilt = verticalBias * wave * 1.15;
+  const sliceOpacity = clamp(p * 4.5, 0, 1);
+
+  scene.progress = p;
+  scene.touchY = touchYPercent;
+
+  els.paper.style.transition = "none";
+  scene.curl.style.transition = "none";
+  scene.underlay.style.transition = "none";
+  scene.shadow.style.transition = "none";
+
+  if (direction > 0) {
+    const left = Math.max(0, foldX - curlSpan);
+    const right = Math.min(width, foldX + curlSpan * 0.18);
+    const leftPct = (left / width) * 100;
+    const rightInsetPct = ((width - right) / width) * 100;
+
+    els.paper.style.clipPath = `inset(0 ${p * 100}% 0 0)`;
+    scene.curl.style.clipPath =
+      `inset(0 ${rightInsetPct}% 0 ${leftPct}%)`;
+    scene.curl.style.transformOrigin = `${foldX}px ${touchYPercent}%`;
+    scene.curl.style.transform =
+      `translate3d(${-p * 12}px,0,${lift}px) rotateY(${-rotation}deg) rotateZ(${tilt}deg) scaleX(${1 - wave * 0.055})`;
+    scene.curl.style.setProperty("--turn-shadow-direction", "90deg");
+    scene.curl.style.setProperty("--curl-highlight-x", "78%");
+  } else {
+    const left = Math.max(0, foldX - curlSpan * 0.18);
+    const right = Math.min(width, foldX + curlSpan);
+    const leftPct = (left / width) * 100;
+    const rightInsetPct = ((width - right) / width) * 100;
+
+    els.paper.style.clipPath = `inset(0 0 0 ${p * 100}%)`;
+    scene.curl.style.clipPath =
+      `inset(0 ${rightInsetPct}% 0 ${leftPct}%)`;
+    scene.curl.style.transformOrigin = `${foldX}px ${touchYPercent}%`;
+    scene.curl.style.transform =
+      `translate3d(${p * 12}px,0,${lift}px) rotateY(${rotation}deg) rotateZ(${-tilt}deg) scaleX(${1 - wave * 0.055})`;
+    scene.curl.style.setProperty("--turn-shadow-direction", "270deg");
+    scene.curl.style.setProperty("--curl-highlight-x", "22%");
+  }
+
+  scene.curl.style.opacity = String(sliceOpacity);
+  scene.curl.style.filter =
+    `brightness(${0.98 + wave * 0.035}) saturate(${1 - wave * 0.035})`;
+  scene.curl.style.setProperty("--curl-y", `${touchYPercent}%`);
+
+  const shadowWidth = clamp(width * 0.095, 72, 150);
+  const shadowLeft = clamp(
+    foldX - shadowWidth * (direction > 0 ? 0.56 : 0.44),
+    -shadowWidth * 0.3,
+    width - shadowWidth * 0.7
+  );
+
+  scene.shadow.style.left = `${shadowLeft}px`;
+  scene.shadow.style.opacity = String(clamp(wave * 0.92 + p * 0.08, 0, 0.94));
+  scene.shadow.style.transform =
+    `translateZ(18px) scaleX(${0.78 + wave * 0.34}) ${direction < 0 ? "rotate(180deg)" : ""}`;
+
+  scene.underlay.style.opacity = String(0.76 + p * 0.24);
+  scene.underlay.style.transform =
+    `translate3d(0,0,-2px) scale(${0.992 + p * 0.008})`;
+  scene.underlay.style.filter =
+    `brightness(${0.965 + p * 0.035})`;
+
+  els.paper.style.filter =
+    `brightness(${1 - p * 0.018})`;
+}
+
+function animateCurl(scene, target, duration) {
+  return new Promise((resolve) => {
+    const from = scene.progress;
+    const started = performance.now();
+
+    function frame(now) {
+      if (!turnScene || turnScene !== scene) {
+        resolve();
+        return;
+      }
+
+      const elapsed = now - started;
+      const t = clamp(elapsed / Math.max(1, duration), 0, 1);
+
+      // Curva suave de leitura: saída controlada, aceleração no meio e assentamento lento.
+      const eased = 0.5 - Math.cos(Math.PI * t) / 2;
+      const value = from + (target - from) * eased;
+
+      applyCurlProgress(scene, value, scene.touchY);
+
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        resolve();
+      }
+    }
+
+    requestAnimationFrame(frame);
+  });
 }
 
 function setupSwipe() {
@@ -672,9 +788,12 @@ function setupSwipe() {
     startTime = performance.now();
 
     const rect = els.paper.getBoundingClientRect();
-    touchYPercent = clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100, 8, 92);
+    touchYPercent = clamp(
+      ((event.clientY - rect.top) / Math.max(1, rect.height)) * 100,
+      8,
+      92
+    );
 
-    els.paper.style.transition = "none";
     els.paper.setPointerCapture?.(event.pointerId);
   });
 
@@ -684,9 +803,9 @@ function setupSwipe() {
     const currentDx = event.clientX - startX;
     const currentDy = event.clientY - startY;
 
-    if (!directionLocked && (Math.abs(currentDx) > 7 || Math.abs(currentDy) > 7)) {
+    if (!directionLocked && (Math.abs(currentDx) > 6 || Math.abs(currentDy) > 6)) {
       directionLocked = true;
-      horizontalGesture = Math.abs(currentDx) > Math.abs(currentDy) * 1.08;
+      horizontalGesture = Math.abs(currentDx) > Math.abs(currentDy) * 1.05;
     }
 
     if (!horizontalGesture) return;
@@ -697,69 +816,21 @@ function setupSwipe() {
     const canTurn = targetIndex >= 0 && targetIndex < state.pages.length;
 
     if (!canTurn) {
-      const resistance = Math.sign(dx) * Math.min(Math.abs(dx) * 0.16, 34);
-      els.paper.style.transition = "none";
-      els.paper.style.transform = `translate3d(${resistance}px,0,0)`;
-      els.paper.style.setProperty("--turn-shadow-opacity", "0");
       cleanupTurnLayer();
-      dragDirection = 0;
+      const resistance = Math.sign(dx) * Math.min(Math.abs(dx) * 0.11, 24);
+      els.paper.style.transform = `translate3d(${resistance}px,0,0)`;
       return;
     }
 
-    if (dragDirection !== intendedDirection) {
+    if (dragDirection !== intendedDirection || !turnScene) {
       dragDirection = intendedDirection;
-      prepareTurn(dragDirection);
+      prepareTurn(dragDirection, touchYPercent);
     }
 
     const width = Math.max(1, els.paper.clientWidth);
-    const rawAmount = Math.min(1, Math.abs(dx) / width);
-    const amount = 1 - Math.pow(1 - rawAmount, 1.22);
+    const progress = clamp(Math.abs(dx) / (width * 0.88), 0, 0.995);
 
-    if (dragDirection > 0) {
-      const layer = activeTurnLayer;
-      const rotation = -Math.min(88.5, amount * 91);
-      const translateX = dx * 0.035;
-      const translateZ = amount * 30;
-      const subtleTilt = ((touchYPercent - 50) / 50) * amount * 0.34;
-
-      els.paper.style.transformOrigin = `left ${touchYPercent}%`;
-      els.paper.style.transform = `translate3d(${translateX}px,0,${translateZ}px) rotateY(${rotation}deg) rotateZ(${subtleTilt}deg)`;
-      els.paper.style.opacity = String(1 - amount * 0.12);
-      els.paper.style.filter = `brightness(${1 - amount * 0.035})`;
-      els.paper.style.setProperty("--turn-shadow-opacity", String(0.12 + amount * 0.82));
-      els.paper.style.setProperty("--turn-shadow-direction", "90deg");
-      els.paper.style.setProperty("--curl-x", `${100 - amount * 44}%`);
-      els.paper.style.setProperty("--curl-y", `${touchYPercent}%`);
-
-      if (layer) {
-        layer.style.transition = "none";
-        layer.style.opacity = String(0.68 + amount * 0.32);
-        layer.style.filter = `brightness(${0.975 + amount * 0.025})`;
-        layer.style.transform = `translate3d(0,0,-1px) scale(${0.988 + amount * 0.012})`;
-      }
-    } else {
-      const layer = activeTurnLayer;
-      if (!layer) return;
-
-      const remaining = 1 - amount;
-      const rotation = -88.5 * remaining;
-      const translateX = -1.8 * remaining;
-      const translateZ = 16 + amount * 24;
-      const subtleTilt = -((touchYPercent - 50) / 50) * remaining * 0.32;
-
-      layer.style.transition = "none";
-      layer.style.transformOrigin = `left ${touchYPercent}%`;
-      layer.style.transform = `translate3d(${translateX}%,0,${translateZ}px) rotateY(${rotation}deg) rotateZ(${subtleTilt}deg)`;
-      layer.style.opacity = String(Math.min(1, amount * 1.55));
-      layer.style.filter = `brightness(${0.965 + amount * 0.035})`;
-      layer.style.setProperty("--turn-shadow-opacity", String(0.78 - amount * 0.5));
-      layer.style.setProperty("--turn-shadow-direction", "270deg");
-      layer.style.setProperty("--curl-x", `${8 + amount * 38}%`);
-      layer.style.setProperty("--curl-y", `${touchYPercent}%`);
-
-      els.paper.style.transform = `translate3d(${amount * 3}px,0,0) scale(${1 - amount * 0.004})`;
-      els.paper.style.filter = `brightness(${1 - amount * 0.045})`;
-    }
+    applyCurlProgress(turnScene, progress, touchYPercent);
   });
 
   const finish = async (event) => {
@@ -770,21 +841,22 @@ function setupSwipe() {
       els.paper.releasePointerCapture?.(event.pointerId);
     } catch {}
 
-    if (!horizontalGesture || !dragDirection || Math.abs(dx) < 4) {
-      await cancelDraggedTurn(dragDirection);
+    if (!horizontalGesture || !dragDirection || !turnScene) {
+      cleanupTurnLayer();
       return;
     }
 
-    const width = Math.max(1, els.paper.clientWidth);
     const elapsed = Math.max(1, performance.now() - startTime);
     const velocity = Math.abs(dx) / elapsed;
-    const threshold = width * 0.145;
-    const shouldTurn = Math.abs(dx) > threshold || velocity > 0.48;
+    const progress = turnScene.progress;
+    const shouldTurn =
+      progress >= 0.23 ||
+      (velocity > 0.52 && Math.abs(dx) > 28);
 
     if (shouldTurn) {
-      await completeTurn(dragDirection);
+      await completeTurn(dragDirection, false);
     } else {
-      await cancelDraggedTurn(dragDirection);
+      await cancelDraggedTurn();
     }
   };
 
@@ -792,50 +864,16 @@ function setupSwipe() {
   els.paper.addEventListener("pointercancel", finish);
 }
 
-async function cancelDraggedTurn(direction) {
-  const layer = activeTurnLayer;
-
-  if (!direction || !layer) {
-    els.paper.style.transition =
-      "transform 240ms cubic-bezier(.22,.72,.16,1), opacity 220ms ease, filter 220ms ease";
-    els.paper.style.transform = "translate3d(0,0,0) rotateY(0deg)";
-    els.paper.style.opacity = "1";
-    els.paper.style.filter = "";
-    els.paper.style.setProperty("--turn-shadow-opacity", "0");
-    await sleep(245);
-    cleanupTurnLayer();
+async function cancelDraggedTurn() {
+  const scene = turnScene;
+  if (!scene) {
     resetPaperVisuals();
     return;
   }
 
-  if (direction > 0) {
-    els.paper.style.transition =
-      "transform 300ms cubic-bezier(.2,.82,.18,1), opacity 230ms ease, filter 230ms ease";
-    els.paper.style.transform = "translate3d(0,0,0) rotateY(0deg)";
-    els.paper.style.opacity = "1";
-    els.paper.style.filter = "";
-    els.paper.style.setProperty("--turn-shadow-opacity", "0");
-
-    layer.style.transition =
-      "transform 300ms cubic-bezier(.2,.82,.18,1), opacity 230ms ease, filter 230ms ease";
-    layer.style.transform = "translate3d(0,0,-1px) scale(0.988)";
-    layer.style.opacity = "0.68";
-  } else {
-    layer.style.transition =
-      "transform 300ms cubic-bezier(.2,.82,.18,1), opacity 230ms ease, filter 230ms ease";
-    layer.style.transform = "translate3d(-1.5%,0,14px) rotateY(-88deg)";
-    layer.style.opacity = "0";
-    layer.style.filter = "brightness(.965)";
-
-    els.paper.style.transition =
-      "transform 300ms cubic-bezier(.2,.82,.18,1), filter 230ms ease";
-    els.paper.style.transform = "translate3d(0,0,0) scale(1)";
-    els.paper.style.filter = "";
-  }
-
-  await sleep(305);
+  const duration = 180 + scene.progress * 320;
+  await animateCurl(scene, 0, duration);
   cleanupTurnLayer();
-  resetPaperVisuals();
 }
 
 async function completeTurn(direction, programmatic = false) {
@@ -843,60 +881,26 @@ async function completeTurn(direction, programmatic = false) {
 
   const nextIndex = state.pageIndex + direction;
   if (nextIndex < 0 || nextIndex >= state.pages.length) {
-    await cancelDraggedTurn(direction);
+    await cancelDraggedTurn();
     return;
   }
+
+  const scene = turnScene || prepareTurn(direction, 50);
+  if (!scene) return;
 
   state.turning = true;
   closeSettings();
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reducedMotion) {
-    state.pageIndex = nextIndex;
-    cleanupTurnLayer();
-    renderPage();
-    state.turning = false;
-    return;
+
+  if (!reducedMotion) {
+    const remaining = 1 - scene.progress;
+    const duration = programmatic
+      ? 940
+      : clamp(250 + remaining * 430, 260, 650);
+
+    await animateCurl(scene, 1, duration);
   }
-
-  const layer = activeTurnLayer || prepareTurn(direction);
-  const turnDuration = programmatic ? 780 : 390;
-  const backDuration = programmatic ? 800 : 400;
-  const fadeDuration = programmatic ? 610 : 300;
-  const settleDelay = (direction > 0 ? turnDuration : backDuration) + 15;
-
-  if (direction > 0) {
-    if (layer) {
-      layer.style.transition =
-        `transform ${turnDuration}ms cubic-bezier(.16,.72,.16,1), opacity ${fadeDuration}ms ease, filter ${fadeDuration}ms ease`;
-      layer.style.transform = "translate3d(0,0,-1px) scale(1)";
-      layer.style.opacity = "1";
-      layer.style.filter = "brightness(1)";
-    }
-
-    els.paper.style.transformOrigin = "left center";
-    els.paper.style.transition =
-      `transform ${turnDuration}ms cubic-bezier(.16,.72,.16,1), opacity ${fadeDuration}ms ease, filter ${fadeDuration}ms ease`;
-    els.paper.style.transform = "translate3d(-3.5%,0,34px) rotateY(-89.4deg)";
-    els.paper.style.opacity = "0.08";
-    els.paper.style.filter = "brightness(.95)";
-    els.paper.style.setProperty("--turn-shadow-opacity", "0.96");
-  } else if (layer) {
-    layer.style.transformOrigin = "left center";
-    layer.style.transition =
-      `transform ${backDuration}ms cubic-bezier(.16,.74,.14,1), opacity ${fadeDuration}ms ease, filter ${fadeDuration}ms ease`;
-    layer.style.transform = "translate3d(0,0,32px) rotateY(0deg)";
-    layer.style.opacity = "1";
-    layer.style.filter = "brightness(1)";
-    layer.style.setProperty("--turn-shadow-opacity", "0.12");
-
-    els.paper.style.transition =
-      `transform ${backDuration}ms cubic-bezier(.16,.74,.14,1), filter ${fadeDuration}ms ease`;
-    els.paper.style.transform = "translate3d(3px,0,0) scale(.996)";
-    els.paper.style.filter = "brightness(.955)";
-  }
-
-  await sleep(settleDelay);
 
   state.pageIndex = nextIndex;
   cleanupTurnLayer();
@@ -910,7 +914,11 @@ async function turnPage(direction) {
   const nextIndex = state.pageIndex + direction;
   if (nextIndex < 0 || nextIndex >= state.pages.length) return;
 
-  prepareTurn(direction);
+  const scene = prepareTurn(direction, 50);
+  if (!scene) return;
+
+  // Um pequeno início visível evita a sensação de "teleporte" ao clicar.
+  applyCurlProgress(scene, 0.015, 50);
   await nextFrame();
   await completeTurn(direction, true);
 }
