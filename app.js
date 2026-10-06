@@ -23,6 +23,9 @@ const els = {
   lineDown: $("#lineDown"),
   lineUp: $("#lineUp"),
   lineValue: $("#lineValue"),
+  pageJumpForm: $("#pageJumpForm"),
+  pageJumpInput: $("#pageJumpInput"),
+  pageJumpTotal: $("#pageJumpTotal"),
   themeButtons: [...document.querySelectorAll("[data-theme-choice]")],
   bookTitle: $("#bookTitle"),
   bookProgress: $("#bookProgress"),
@@ -104,6 +107,11 @@ function bindEvents() {
   els.fontUp.addEventListener("click", () => updateFont(1));
   els.lineDown.addEventListener("click", () => updateLineHeight(-0.08));
   els.lineUp.addEventListener("click", () => updateLineHeight(0.08));
+
+  els.pageJumpForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    goToSelectedPage();
+  });
 
   els.themeButtons.forEach((button) => {
     button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
@@ -555,6 +563,9 @@ function renderPage() {
   els.progressFill.style.width = `${percent}%`;
   els.prevBtn.disabled = state.pageIndex <= 0;
   els.nextBtn.disabled = state.pageIndex >= total - 1;
+  els.pageJumpInput.max = String(total);
+  els.pageJumpInput.value = String(current);
+  els.pageJumpTotal.textContent = `de ${total}`;
 
   resetPaperVisuals();
 }
@@ -921,6 +932,33 @@ async function turnPage(direction) {
   applyCurlProgress(scene, 0.015, 50);
   await nextFrame();
   await completeTurn(direction, true);
+}
+
+function goToSelectedPage() {
+  if (!state.pages.length || state.turning) return;
+
+  const total = state.pages.length;
+  const requested = Number.parseInt(els.pageJumpInput.value, 10);
+
+  if (!Number.isFinite(requested)) {
+    els.pageJumpInput.value = String(state.pageIndex + 1);
+    return;
+  }
+
+  const pageNumber = clamp(requested, 1, total);
+  const targetIndex = pageNumber - 1;
+
+  els.pageJumpInput.value = String(pageNumber);
+
+  if (targetIndex === state.pageIndex) {
+    closeSettings();
+    return;
+  }
+
+  cleanupTurnLayer();
+  state.pageIndex = targetIndex;
+  renderPage();
+  closeSettings();
 }
 
 function updateFont(delta) {
