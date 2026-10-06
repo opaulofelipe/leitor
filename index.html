@@ -123,6 +123,22 @@
             <button type="button" id="lineUp" aria-label="Aumentar entrelinha">+</button>
           </div>
         </div>
+
+        <div class="setting-group page-jump-group">
+          <label class="setting-label" for="pageJumpInput">Ir para página</label>
+          <form class="page-jump" id="pageJumpForm">
+            <input
+              id="pageJumpInput"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              value="1"
+              aria-label="Número da página"
+            />
+            <span class="page-jump-total" id="pageJumpTotal">de 1</span>
+            <button type="submit" class="page-jump-btn">Ir</button>
+          </form>
+        </div>
       </aside>
 
       <div class="reading-stage">
